@@ -1,0 +1,25 @@
+global_planner:
+  ros__parameters:
+    map_topic: "map"
+    odom: "odom"
+    goal_topic: global_goal
+    global_path_topic: global_path
+    robot_radius: 0.3
+
+controller:
+  ros__parameters:
+    path_topic: "global_path"
+    goal_topic: "global_goal"
+    odom: "odom"
+    cmd_vel_topic: "base_controller/command"
+    laser_scan_topic: "base_scan" 
+    agents_scan_topic: "agents"
+    robot_marker_topic: "robot_maker"
+    trajectories_topic: "dwa_trajectories"
+    local_goal_marker_topic: "local_goal_maker"
+
+multiplexer:
+  ros__parameters:
+    cmd_joystick_topic: "cmd_vel_joystick"
+    cmd_nav_topic: "cmd_vel_nav"
+    cmd_output_topic: "cmd_vel"
