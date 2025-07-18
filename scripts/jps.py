@@ -30,34 +30,12 @@ class JPSPlanner(GlobalPlanner):
         start = self.world_to_map(self.robot_pose.position.x, self.robot_pose.position.y)
         goal = self.world_to_map(self.goal_pose.position.x, self.goal_pose.position.y)
 
-        # if self.cached_path_points is not None:
-        #     robot_pos_world = (self.robot_pose.position.x, self.robot_pose.position.y)
-        #     goal_pos_world = (self.goal_pose.position.x, self.goal_pose.position.y)
-        #     if self.is_pos_near_path(robot_pos_world, self.cached_path_points) and self.is_pos_near_path(goal_pos_world, self.cached_path_points):
-        #         truncated_path = self.truncate_path_from_robot(robot_pos_world, self.cached_path_points)
-        #         msg = self.build_path_message(truncated_path)
-        #         self.cached_path_points = truncated_path  # 🔁 Mise à jour ici
-        #         # Robot proche du chemin actuel, republier sans recalcul
-        #         self.path_publisher.publish(msg)
-        #         return
+        self.get_logger().warn("{}    {}".format(start, goal))
+        self.get_logger().warn("{}".format(self.map_data.shape))
 
         # Sinon recalculer le chemin avec JPS
         cost_path, path = self.jps(start, goal)
         if path:
-            # if self.is_path_traversable(self.cached_path_points):
-            #     if self.cached_cost_path > cost_path * (0.98):
-            #         self.path_publisher.publish(self.cached_path_msg)
-            #         return
-            # similarity_with_previous_path = self.hausdorff_similarity(self.cached_path_points, path)
-            # self.get_logger().info(str(similarity_with_previous_path))
-            # self.get_logger().info(str(self.cached_path_points))
-            # self.get_logger().info(str(path))
-            # self.get_logger().info(" ----- \n")
-            # if similarity_with_previous_path < 0.9:
-            #     if self.is_path_traversable(self.cached_path_points):
-            #         if self.cached_cost_path > cost_path * (0.90):
-            #             self.path_publisher.publish(self.cached_path_msg)
-            #             return
             self.cached_path_points = path
             self.cached_cost_path = cost_path
             self.cached_path_msg = self.build_path_message(path)
@@ -288,11 +266,11 @@ class JPSPlanner(GlobalPlanner):
         path = self.interpolate_linear_path(path, points_per_segment=5)
 
         msg = Path()
-        msg.header.frame_id = "map"
+        msg.header.frame_id = self.prefix+"map"
         msg.header.stamp = self.get_clock().now().to_msg()
         for x, y in path:
             pose = PoseStamped()
-            pose.header.frame_id = "map"
+            pose.header.frame_id = self.prefix+"map"
             wx, wy = self.map_to_world(x, y)
             pose.pose.position.x = wx
             pose.pose.position.y = wy

@@ -83,17 +83,10 @@ class LazyThetaStarPlanner(GlobalPlanner):
 
     @lru_cache(maxsize=512)
     def line_of_sight(self, p1, p2):
-        # key = tuple(sorted((p1, p2)))  # Symmetric caching
-        # if key in self.los_cache:
-        #     return self.los_cache[key]
-
         for x, y in self.bresenham(p1, p2):
             if not (0 <= x < self.map_data.shape[1] and 0 <= y < self.map_data.shape[0]) \
                     or self.map_data[y, x] >= 50:
-                # self.los_cache[key] = False
                 return False
-
-        # self.los_cache[key] = True
         return True
 
     def bresenham(self, start, end):
