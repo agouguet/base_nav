@@ -43,7 +43,13 @@ include_directories(include)
 ament_export_dependencies(rosidl_default_runtime)
 
 install(DIRECTORY
+  DESTINATION share/${PROJECT_NAME}/
+)
+install(DIRECTORY
   launch
+  DESTINATION share/${PROJECT_NAME}
+)
+install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
 )
@@ -54,13 +60,21 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/dwa_controller.py
   scripts/dwa_controller_social.py
-  scripts/dwa_controller_test.py
-  scripts/bidirectional_a_star.py
-  scripts/theta_star.py
-  scripts/old_global_planner.py
-  scripts/jps.py
-  scripts/costmap.py
+  scripts/global_planner.py
   DESTINATION lib/${PROJECT_NAME})
 
+
+# Ajouter le fichier source
+add_executable(dwa_controller_cpp src/dwa_controller_cpp.cpp)
+
+# Lier les bibliothèques nécessaires
+ament_target_dependencies(dwa_controller_cpp rclcpp geometry_msgs nav_msgs sensor_msgs visualization_msgs std_msgs)
+
+
+# Installer l'exécutable
+install(TARGETS
+  dwa_controller_cpp
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_package()

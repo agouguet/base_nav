@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 class LocalPlannerDWA(Node):
     def __init__(self):
-        super().__init__('controller')
+        super().__init__('local_planner_dwa')
 
         # Declare and get parameters
         self.declare_parameter('path_topic', '/global_path')

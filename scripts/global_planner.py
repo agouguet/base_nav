@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 import time
+
+from matplotlib import pyplot as plt
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid, Path
-from geometry_msgs.msg import PoseStamped, Pose
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 import numpy as np
 import heapq
 import math
 import cv2
 from rdp import rdp
-from rclpy.duration import Duration
-import tf2_geometry_msgs.tf2_geometry_msgs
-from tf2_ros import TransformException, LookupException, ConnectivityException, ExtrapolationException
-from tf2_ros.buffer import Buffer
-from tf2_ros.transform_listener import TransformListener
 
 
 def calculate_reduction_factor(width, height, threshold=500, min_limit=1):
@@ -47,7 +44,7 @@ class GlobalPlanner(Node):
     def __init__(self):
         super().__init__('global_planner')
         self.declare_parameter('map_topic', '/map')
-        self.declare_parameter('odom_topic', '/odom')
+        self.declare_parameter('odom_topic', '/robot_odom')
         self.declare_parameter('goal_topic', '/global_goal')
         self.declare_parameter('global_path_topic', '/global_path')
         self.declare_parameter('robot_radius', 0.3) 
@@ -69,8 +66,8 @@ class GlobalPlanner(Node):
         self.goal_pose = None
         self.robot_radius = self.get_parameter('robot_radius').value
 
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        # Timer for periodic planning
+        self.create_timer(0.5, self.try_plan)
 
     def map_callback(self, msg):
         self.get_logger().info('Map received')
@@ -99,6 +96,8 @@ class GlobalPlanner(Node):
         reduce_factor = calculate_reduction_factor(self.map_data.shape[0], self.map_data.shape[1])
         self.get_logger().info("Size reduction factor: " + str(reduce_factor))
         self.downsample_map(reduce_factor)
+        self.map_data[self.map_data < 50] = 0  # Considérer les valeurs basses comme libres
+        self.map_data[self.map_data >= 50] = 100  # Marquer clairement les obstacles
 
     def downsample_map(self, factor):
         """
@@ -110,62 +109,22 @@ class GlobalPlanner(Node):
 
         new_height = self.map_data.shape[0] // factor
         new_width = self.map_data.shape[1] // factor
+        self.map_data = self.map_data.astype(np.uint8)
         self.map_data = cv2.resize(
-            self.map_data, (new_width, new_height), interpolation=cv2.INTER_NEAREST
+            self.map_data, (new_width, new_height), interpolation=cv2.INTER_AREA
         )
         self.map_resolution *= factor
 
 
     def odom_callback(self, msg):
-        if self.map_data is not None:
-            # try:
-            #     # Vérifier si le transform est disponible sans bloquer
-            #     if not self.tf_buffer.can_transform('map', 'odom', rclpy.time.Time()):
-            #         self.get_logger().warn("Transform map -> odom non encore disponible, on continue...")
-            #         return
-
-            #     # Si le transform existe, le récupérer
-            #     t = self.tf_buffer.lookup_transform("map", "odom", rclpy.time.Time(), timeout=Duration(seconds=10.0))
-            #     robot_position = msg.pose.pose
-            #     pose = tf2_geometry_msgs.do_transform_pose(robot_position, t)
-            #     self.get_logger().info("TF Done. Try plan...")
-            #     self.robot_pose = pose
-            #     self.try_plan()
-            # except tf2_ros.LookupException:
-            #     self.get_logger().warn("Transform non disponible (LookupException)")
-            # except tf2_ros.ConnectivityException:
-            #     self.get_logger().warn("Problème de connectivité dans TF2")
-            # except tf2_ros.ExtrapolationException:
-            #     self.get_logger().warn("Extrapolation requise pour le transform")
-            try:
-                # On récupère la transform de 'map' à 'base_link'
-                transform: TransformStamped = self.tf_buffer.lookup_transform(
-                    'map',
-                    'base_link',
-                    rclpy.time.Time()
-                )
-                translation = transform.transform.translation
-                rotation = transform.transform.rotation
-
-                self.robot_pose = Pose()
-                self.robot_pose.position.x = translation.x
-                self.robot_pose.position.y = translation.y
-                self.robot_pose.position.z = translation.z
-                self.robot_pose.orientation = rotation
-
-                self.try_plan()
-
-            except (LookupException, ConnectivityException, ExtrapolationException) as e:
-                self.get_logger().warn(f"Transform not available yet: {e}")
+        self.robot_pose = msg.pose.pose
+        # self.try_plan()
 
     def goal_callback(self, msg):
         self.goal_pose = msg.pose
-        self.try_plan()
+        # self.try_plan()
 
     def try_plan(self):
-        # self.get_logger().info("RP  " + str(self.robot_pose))
-        # self.get_logger().info("GP  " + str(self.goal_pose))
-        # self.get_logger().info("MD  " + str(self.map_data))
         if self.map_data is not None and self.robot_pose is not None and self.goal_pose is not None:
             self.bidirectional_a_star()
 
@@ -189,13 +148,18 @@ class GlobalPlanner(Node):
         for dx, dy in offsets:
             nx, ny = node[0] + dx, node[1] + dy
             if 0 <= nx < self.map_data.shape[1] and 0 <= ny < self.map_data.shape[0]:
-                if self.map_data[ny, nx] < 50:  # Vérifie si la cellule est libre
+                if self.map_data[ny, nx] < 10:  # Vérifie si la cellule est libre
                     result.append((nx, ny))
         return result
 
     def bidirectional_a_star(self):
-        start_map = self.world_to_map(self.robot_pose.position.x, self.robot_pose.position.y)
+        robot_x = self.robot_pose.position.x
+        robot_y = self.robot_pose.position.y
+        start_map = self.world_to_map(robot_x, robot_y)
         goal_map = self.world_to_map(self.goal_pose.position.x, self.goal_pose.position.y)
+
+        if 0 <= robot_x < self.map_data.shape[1] and 0 <= robot_y < self.map_data.shape[0]:
+            self.map_data[int(robot_y), int(robot_x)] = 0
 
         open_set_start = [(0, start_map)]
         open_set_goal = [(0, goal_map)]
@@ -231,6 +195,9 @@ class GlobalPlanner(Node):
 
         self.get_logger().warn('No path found!')
 
+        # plt.imshow(self.map_data)
+        # plt.savefig("mygraph.png")
+
     def publish_combined_path(self, came_from_start, came_from_goal, meeting_point):
         path_start = []
         current = meeting_point
@@ -262,7 +229,7 @@ class GlobalPlanner(Node):
 
         self.path_publisher.publish(msg)
         # self.get_logger().info('Global Path Updated. N = ' + str(len(path)))
-        self.get_logger().info("Global path publish.")
+        # self.get_logger().info(str(path))
 
 
 def main(args=None):
